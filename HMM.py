@@ -2,36 +2,34 @@ import numpy as np
 
 
 class HMM:
-    def __init__(self, emissions, transitions):
-        self.emissions = emissions  # Emission probability matrix
-        self.transitions = transitions  # Transition probability matrix
-        self.pi = np.array([0.8, 0.2, 0, 0])  # Initial state distribution (pi)
+    def __init__(self, transition_matrix, emission_matrix, pi=None):
+        self.transitions = np.asarray(transition_matrix, dtype=np.float64)
+        self.emissions = np.asarray(emission_matrix, dtype=np.float64)
+        self.n_states = self.transitions.shape[0]
+        self.pi = np.asarray(pi, dtype=np.float64) if pi is not None else np.full(self.n_states, 1.0 / self.n_states, dtype=np.float64)
 
     def run_viterbi(self):
-        n_states = self.transitions.shape[0]
-        n_observations = self.emissions.shape[1]
+        # Emissions expected as shape [T, n_states]
+        T = self.emissions.shape[0]
+        log_trans = np.log(self.transitions + 1e-20)
+        log_emit = np.log(self.emissions + 1e-20)
+        log_pi = np.log(self.pi + 1e-20)
 
-        forward_probs = np.zeros((n_states, n_observations))
-        backtracking = np.zeros((n_states, n_observations), dtype=int)
+        dp = np.zeros((T, self.n_states))
+        back = np.zeros((T, self.n_states), dtype=np.int32)
 
-        # initialize base cases (t == 0)
-        for s in range(n_states):
-            forward_probs[s, 0] = self.pi[s] * self.emissions[s, 0]
+        dp[0] = log_pi + log_emit[0]
 
-        #recursion step
-        for o in range(1, n_observations):
-            for s in range(n_states):
-                transition_probs = forward_probs[:, o - 1] * self.transitions[:, s]
-                best_prev_state = np.argmax(transition_probs)
-                forward_probs[s, o] = transition_probs[best_prev_state] * self.emissions[s, o]
-                backtracking[s, o] = best_prev_state
+        for t in range(1, T):
+            for s in range(self.n_states):
+                scores = dp[t - 1] + log_trans[:, s]
+                best_prev = np.argmax(scores)
+                dp[t, s] = scores[best_prev] + log_emit[t, s]
+                back[t, s] = best_prev
 
-        #termination step
-        states = np.zeros(n_observations, dtype=int)
-        states[-1] = np.argmax(forward_probs[:, n_observations - 1])
-
-        #backtracking step
-        for o in range(n_observations - 2, -1, -1):
-            states[o] = backtracking[states[o + 1], o + 1]
+        states = np.zeros(T, dtype=np.int32)
+        states[-1] = np.argmax(dp[-1])
+        for t in range(T - 2, -1, -1):
+            states[t] = back[t + 1, states[t + 1]]
 
         return states

@@ -104,7 +104,7 @@ def get_learned_transition_matrix(gb_file):
     """
     Learns transition probabilities from the provided GenBank file.
     :param gb_file: Path to GenBank file.
-    :return: Log-space transition matrix of shape [4, 4].
+    :return: Transition matrix of shape [4, 4].
     0: Intergenic
     1: Start
     2: Coding
@@ -152,7 +152,56 @@ def get_learned_transition_matrix(gb_file):
     print("\nConstrained Probabilities (Final):")
     print(probs)
 
-    return np.log(probs + 1e-20)
+    return probs
+
+
+def get_baseline_emission_probs(gb_file):
+    """
+    Calculates P(Nucleotide | State) by counting occurrences in training data.
+    Returns a 4x4 Probability Table (States x Nucleotides).
+    """
+    print(f"Learning Baseline emissions from {gb_file}...")
+
+    # 1. Load Data
+    ds = dataset.GenomicDataset(gb_file, window_size=1)
+    labels = ds.full_labels.numpy()
+
+    # Convert sequence to integers (0-3) using the dataset's map
+    # We ignore 'N' (4) for the learning phase to avoid noise
+    seq_ints = [ds.stoi[base] for base in ds.full_sequence]
+    seq_ints = np.array(seq_ints)
+
+    # 2. Count (State, Nucleotide) pairs
+    # Shape: [4 States, 4 Nucleotides (A,C,G,T)]
+    counts = np.zeros((4, 4), dtype=np.float64)
+
+    # Mask to ignore 'N' or other weird characters
+    valid_mask = (seq_ints < 4)
+
+    valid_labels = labels[valid_mask]
+    valid_seq = seq_ints[valid_mask]
+
+    # Fast counting using numpy
+    # We iterate 0-3 for states and 0-3 for nucleotides
+    for s in range(4):
+        state_mask = (valid_labels == s)
+        state_seq = valid_seq[state_mask]
+
+        for n in range(4):
+            # How many times does nucleotide n appear in state s?
+            counts[s, n] = np.sum(state_seq == n)
+
+    # 3. Add Pseudocounts (Laplace Smoothing)
+    # This prevents log(0) if a state never contains a specific base (rare but possible)
+    counts += 1.0
+
+    # 4. Normalize to get Probabilities P(Base | State)
+    probs = counts / counts.sum(axis=1, keepdims=True)
+
+    print("Baseline Emission Probs (Rows=States, Cols=ACGT):")
+    print(probs)
+
+    return probs
 
 
 @njit
