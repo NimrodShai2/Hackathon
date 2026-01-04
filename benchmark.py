@@ -10,13 +10,15 @@ from HMM import HMM
 
 GB_FILE_TRAIN = 'data/ecoli_annotations.gb'
 GB_FILE_VAL = 'data/test_annotations.gb'
-WINDOW_SIZES = [20, 100, 200, 500, 1000]
-PLOT_PATH = 'benchmark_comparison.png'
+WINDOW_SIZES = [50, 100, 200, 500, 1000]
+PLOTS_DIR = 'plots'
+PLOT_PATH = os.path.join(PLOTS_DIR, 'benchmark_comparison.png')
 BEST_MODEL_PATH = 'best_cnn.pth'
 
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    os.makedirs(PLOTS_DIR, exist_ok=True)
 
     # Shared matrices/priors learned from training genome
     transition_matrix = hmm_utils.get_learned_transition_matrix(GB_FILE_TRAIN)
@@ -86,6 +88,9 @@ def main():
     labels = ['baseline'] + [str(ws) for ws, _, _ in results]
     precisions = [p_base] + [p for _, p, _ in results]
     recalls = [r_base] + [r for _, _, r in results]
+    f1s = []
+    for p, r in zip(precisions, recalls):
+        f1s.append((2 * p * r / (p + r)) if (p + r) > 0 else 0.0)
     x = range(len(labels))
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
@@ -106,6 +111,37 @@ def main():
     plt.savefig(PLOT_PATH, dpi=200)
     plt.close(fig)
     print(f"Saved comparison plot to {PLOT_PATH}")
+
+    # F1 bar plot
+    f1_path = os.path.join(PLOTS_DIR, 'benchmark_f1.png')
+    plt.figure(figsize=(5, 4))
+    plt.bar(x, f1s, color='mediumseagreen')
+    plt.ylim(0, 1)
+    plt.xticks(x, labels, rotation=45)
+    plt.title('F1 Score (Coding state)')
+    for xi, f1 in zip(x, f1s):
+        plt.text(xi, f1 + 0.01, f"{f1:.3f}", ha='center', va='bottom', fontsize=8)
+    plt.tight_layout()
+    plt.savefig(f1_path, dpi=200)
+    plt.close()
+    print(f"Saved F1 plot to {f1_path}")
+
+    # Precision-Recall scatter
+    scatter_path = os.path.join(PLOTS_DIR, 'precision_recall_scatter.png')
+    plt.figure(figsize=(5, 5))
+    plt.scatter(recalls, precisions, color='slateblue')
+    for lbl, p, r in zip(labels, precisions, recalls):
+        plt.text(r, p, lbl, fontsize=8, ha='left', va='bottom')
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.title('Precision vs Recall (Coding state)')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(scatter_path, dpi=200)
+    plt.close()
+    print(f"Saved Precision-Recall scatter to {scatter_path}")
 
 
 if __name__ == '__main__':
